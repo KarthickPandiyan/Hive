@@ -1,0 +1,270 @@
+different file format storage comparition:
+
+--textfile
+$hadoop fs -du -h /user/hduser/hiveexternaldata/*
+8.1 M  /user/hduser/hiveexternaldata/txns
+
+--parquetfile
+$hadoop fs -du -h /user/hive/warehouse/custdb.db/txn_parquet/*
+1.3 M  /user/hive/warehouse/custdb.db/txn_parquet/000000_0
+
+--orcfile
+$hadoop fs -du -h /user/hive/warehouse/custdb.db/txn_orc/*
+943.5 K  /user/hive/warehouse/custdb.db/txn_orc/000000_0
+*********************************************************************************************
+
+Hive workouts
+--------------
+
+1. Delete Database
+
+Story:	I deleted the database using the below command
+		drop database if exists retail;
+
+Error: 	hive> drop database if exists retail;
+		FAILED: Execution Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask. InvalidOperationException(message:Database retail is not empty. One or more tables exist.)
+	
+Solution:
+		 [RESTRICT|CASCADE]: This is an optional clause. RESTRICT is used to restrict the database from getting dropped
+		 if there are one or more tables present in the database. RESTRICT is the default behavior of the database.
+		 CASCADE is used to drop all the tables present in the database before dropping the database.
+	
+Syntax:	drop database if exists retail Cascade;
+
+
+2. Create Database with location and without location in hive using MYSQL database
+
+Story: I created database with location, so default database location in LINUX was '/user/hduser/warehouse/databasenameinfolder'
+	   Metastore information stored in mysql at METSTORE database
+	   use metastore
+	   select * from DBS; will show the databases created in hive
+	   
+Problem: When i create a hive database with location, database name was not created as folder in linux
+		 Same was happening in MYSQL Metastore DBS.
+
+Solution: when we provide location for creating hive database it will not be created as folder in the specified location, i.e it will not be visible 
+		  also in metastore too. 
+		  If we created a table under the created database, table name will be visible
+		  
+3. Create table
+
+Story: while i create a able i mentioned all the column data type in small letter as result error
+
+Error: ParseException line 3:21 cannot recognize input near 'feilds' 'terminated' 'by' in serde properties specification
+
+Solution: created the column datatype in captial letters it worked
+	create table if not exists txnrecords
+    > (txno INT, txndate STRING, custno INT, amount DOUBLE, category STRING, product STRING, city STRING, state STRING, spendby STRING)
+    > row format delimited fields terminated by ','
+    > lines terminated by '\n'
+    > stored as textfile;
+	
+	To see the table details in property wise use the below command
+	show create table txnrecords;
+
+4. Load data from linux to table
+	use retails;(database)
+	checking the table 
+	select * from txnrecords;
+	
+	LOAD DATA LOCAL INPATH '/home/hduser/hive/data/txns' into table txnrecords;
+	
+	MySQL METASTORE
+	Validate the data base and created table in MYSQL metastore by checking
+		use metastore;
+		SELECT * From DBS;
+		SELECT * FROM TBLS;
+		
+	Here data will be appened without OVERWRITE
+		
+5. To delete a data in table use the below command
+	use retails;(database)
+	checking the table 
+	select * from txnrecords;
+	LOAD DATA LOCAL INPATH '/home/hduser/hive/data/txns' OVERWRITE into table txnrecords;
+		
+	OLD data will be deleted and new data will be replaced
+	
+6. Load data from linux to HDFS
+	hadoop fs -put /home/hduser/hive/data/txns txns1
+	
+	To load the data from hdfs to hive
+	use retails;(database)
+	checking the table 
+	select * from txnrecords;
+	LOAD DATA INPATH '/home/hduser/hive/data/txns' into table txnrecords;
+
+	Here data will be appened without OVERWRITE
+
+7. To see the current data base in hive
+	
+	SET HIVE.CLI.PRINT.DB = TRUE;
+	
+8. To see database of similart type 
+	show databases 'retil*';
+	
+9. SELECT the LOADED DATA
+	Using LIMIT;
+	Where Column = name;
+	
+	Odering value
+	ORDER BY will come first after where clause
+	if you want to user ORDER by then use it as inline view
+
+10. Create External table if not exists Externaltbls
+	(txnno INT, txndate STRING, custno INT, amount DOUBLE, category STRING, product STRING, city STRING, state STRING, spendby STRING)
+	row format delimited fields terminated by ','
+	stored as textfile
+	location '/user/hduser/hiveexternaldata';
+
+11. Describing metadata or schema of the table 
+	
+	describe formatted txnrecords;
+	or 
+	Show create table
+
+12. ARRAY Table creation
+	
+	Create table if not exists arraytbl
+	(id int, name string, sal bigint, design array<string>, city string)
+	row format delimited fields terminated by ','
+	collection items terminated by '$';
+	
+	When selecting a column for an array column has to homogenious sequence of element
+	value ordered in a index it can be reterived by its position
+
+13. we can verify the data with below content in hive
+	
+	!cat /home/hduser/hive/data/arraydata; 
+
+14. Select array values in table
+	
+	SELECT name, id, desig[1] from arraytabl;
+	
+	this will list all the value based on desig[1]
+	
+15. STRUCT table creation
+	Struct is collection of hetrogenious elements which can be access with name fields
+	
+	CREATE TABLE IF NOT EXISTS STRUCTTABL
+	(id int, name string, sal bigint, address struc<city:string, state:string, pin:bigint>)
+	ROW FORMAT DELIMITED FIELDS TERMINATED BY ','
+	COLLECTION ITEMS TERMINATED BY '$';
+	
+	SELECT STRUCT values 
+	select name, id, address.city, address.state, address.pin from structtabl;
+	
+16. Create a MAP columns 
+	create table if not exist maptabl
+	(id int, name string, salary bigint, marks<string:int>, school)
+	row format delimited 
+	fields terminated by ','
+	collection items terminated by '$'
+	map keys terminated by '#';
+	
+	1, ram, 20000, maths#100$sci#90$Eng#88, SRDKVVJC
+	
+	output : 1, ram, 20000, {"mat":100,"Eng":88}
+	
+17. To access the map column 
+	
+	hive> select id, name, mark["mat"] from maptabl;
+	OK
+	1       Arvindh 100
+	2       Bala    NULL
+	Time taken: 0.394 seconds, Fetched: 2 row(s)
+	hive> select * from maptabl;
+	OK
+	1       Arvindh 40000   {"mat":100,"Eng":99}    hyd
+	2       Bala    30000   {"Sci":100,"Eng":99}    chn
+	Time taken: 0.161 seconds, Fetched: 2 row(s)
+	
+18. Creating INDEX column
+	Create INDEX inx_columnno on txnrecords(custno) AS
+	'org.apache.hadoop.hive.ql.index.compact.CompactIndexHandler' WITH DEFERRED REBUILD; 
+	
+	Once created the index a blank page is created were as initially it has deffered the index build
+	No we need to rebuild the index to number for all datas and newly added datas
+	
+	To REBUILD index for new data using 
+	ALTER INDEX idx_custno on txnrecords REBUILD;
+	This will calculate the data in index in newly created column
+
+19.	to see a detailed view of indexed column in a table
+		using
+		SHOW FORMATTED INDEX ON TXNRECORDS;
+
+20. TO Drop an index in a table
+		using
+		DROP INDEX idx_colno on txnrecords;
+		
+21. Partition
+    	CREATE TABLE `txnrecsbycatdtreg`(
+      `txnno` int,
+      `txndate` string,
+      `custno` int,
+      `amount` double,
+      `category` string,
+      `product` string,
+      `city` string,
+      `state` string,
+      `spendby` string)
+    
+	PARTITIONED BY (
+      `datadt` date,
+      `region` string)
+    ROW FORMAT DELIMITED
+      FIELDS TERMINATED BY ','
+	  
+22.	  STATIC PARTITION USING LOAD it has 2 types
+
+			1. Load data local inpath or load data directory(this for hadoop)
+
+			2. Load data local inpath PATHNAME OVERWRITE  into table tablename (this is overwrite existing data in the table or delete the data in table)
+			
+		LOAD DATA LOCAL INPATH '/HOME/HDUSER/HIVE/DATA/TXN' INTO TABLE TABLENAME
+		PARTITION (CATEGORY ='GAMES')
+		
+		LOAD DATA LOCAL INPATH '/HOME/HDUSER/HIVE/DATA/TXN' OVERWRITE INTO TABLE TABLENAME
+		PARTITION (CATEGORY ='GAMES')
+		
+		
+		DYNAMIC PARTITION
+		-----------------
+		Before we create dynamic partition we have to create
+		
+		set hive.exec.dynamic.partition.mode=nonstrict
+		
+		intially it will be strict mode as dynamic partition will apply more mappers for
+		all created partitions
+		
+		create External table
+
+		CREATE EXTERNAL TABLE IF NOT EXISTS TABLENAME
+		(Columns and data type)
+		partitioned by (Category String, Datadt date)
+		row format delimited fields terminated by ','
+		
+		LOAD DATA LOCAL INPATH '/HOME/HDUSER/HIVE/DATA/TXN' INTO TABLE TABLENAME
+		PARTITION (CATEGORY = 'value')
+
+		
+	
+23. 	HOW TO CHANGE THE COLUMN VALUE IN A TABLE?
+		ALTER TABLE TABLE NAME CHANGE OLDCOLUMN NAME NEW COLUMN DATATYPE;
+		
+		SYNTAX
+			ALTER TABLE name RENAME TO new_name
+			ALTER TABLE name ADD COLUMNS (col_spec[, col_spec ...])
+			ALTER TABLE name DROP [COLUMN] column_name
+			ALTER TABLE name CHANGE column_name new_name new_type
+			ALTER TABLE name REPLACE COLUMNS (col_spec[, col_spec ...])
+
+
+
+hive> load data local inpath '/home/hduser/hive/data/txns_20181212_PADE'
+    > into table txnrecsByCat
+    > partition (datadt='2018-12-12', region='PADE')
+
+			
+			
